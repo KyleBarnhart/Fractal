@@ -8,13 +8,13 @@
  */
 #include "common.h"
 
-#define ELEM_SWAP(a,b) { register elem_type t=(a);(a)=(b);(b)=t; }
+#define ELEM_SWAP(a,b) { register ElementType t=(a);(a)=(b);(b)=t; }
 
-elem_type median(elem_type arr[], int n) 
+ElementType median(ElementType* arr, AlisingFactorSqType n) 
 {
-    int low, high ;
-    int median;
-    int middle, ll, hh;
+    AlisingFactorSqType low, high ;
+    AlisingFactorSqType median;
+    AlisingFactorSqType middle, ll, hh;
 
     low = 0 ; high = n-1 ; median = (low + high) / 2;
     for (;;) {
@@ -60,13 +60,13 @@ elem_type median(elem_type arr[], int n)
 
 #undef ELEM_SWAP
 
-void getRGB(double value, unsigned char rgb[])
+void getRGB(ElementType value, BYTE rgb[])
 { 
-   int colourInt = value * 1791;
+   short colourInt = (short)(value * 1791.0);
    
-   int bracket = colourInt / 256;
-   int colour = colourInt % 256;
-   
+   BYTE bracket = colourInt / 256;
+   BYTE colour = (BYTE)(colourInt % 256);
+
    switch (bracket)
    {
       case 0:

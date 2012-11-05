@@ -1,12 +1,14 @@
 #ifndef FRACTAL_H
 #define FRACTAL_H
 
-unsigned char* fractal(unsigned imgWidth, unsigned imgHeight,
-                unsigned iterations, double xMin, double xMax,
-                double yMin, double yMax);
+#include "common.h"
 
-unsigned char* fractal(unsigned imgWidth, unsigned imgHeight,
-                unsigned iterations, double xMin, double xMax,
-                double yMin, double yMax, unsigned ssaaFactor = 0);
+void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
+                IterationType iterations, ElementType xMin, ElementType xMax,
+                ElementType yMin, ElementType yMax);
+
+void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
+                IterationType iterations, ElementType xMin, ElementType xMax,
+                ElementType yMin, ElementType yMax, AlisingFactorType ssaaFactor = 0);
 
 #endif

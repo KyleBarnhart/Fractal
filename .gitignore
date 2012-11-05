@@ -7,6 +7,7 @@
 *.slo
 *.lo
 *.o
+*.obj
 *.so
 *.lai
 *.la
@@ -25,6 +26,13 @@
 *.rar
 *.tar
 *.zip
+
+# Visual Studio #
+#################
+*.sln
+*.sdf
+*.opensdf
+*.user
 
 # Logs and databases #
 ######################
