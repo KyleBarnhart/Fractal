@@ -15,9 +15,9 @@ int main(int argc, char* argv[])
    ElementType zoomFactor = 1.0;
    ElementType x = -0.5;
    ElementType y = 0.0;
-   AlisingFactorType ssaa = 0;
-   DimensionType width = 8000;
-   DimensionType height = 6000;
+   AlisingFactorType ssaa = 2;
+   DimensionType width = 1920;
+   DimensionType height = 1080;
    IterationType iterations = 50;
    ElementType endZoom = 1.0;
    FrameType frames = 1;
@@ -43,21 +43,21 @@ int main(int argc, char* argv[])
       // Zoom factor
       else if (strcmp(argv[i],"-z") == 0 && argc >= i + 1)
       {
-         zoomFactor = atof(argv[i + 1]);
+         zoomFactor = (ElementType)atof(argv[i + 1]);
          i += 2;
       }
       
       // x coordinate
       else if (strcmp(argv[i],"-x") == 0 && argc >= i + 1)
       {
-         x = atof(argv[i + 1]);
+         x = (ElementType)atof(argv[i + 1]);
          i += 2;
       }
       
       // y coordinate
       else if (strcmp(argv[i],"-y") == 0 && argc >= i + 1)
       {
-         y = atof(argv[i + 1]);
+         y = (ElementType)atof(argv[i + 1]);
          i += 2;
       }
       
@@ -71,7 +71,7 @@ int main(int argc, char* argv[])
       // Animated zoom
       else if (strcmp(argv[i],"-sequence") == 0 && argc >= i + 2)
       { 
-         endZoom = atof(argv[i + 1]);
+         endZoom = (ElementType)atof(argv[i + 1]);
          frames = atoi(argv[i + 2]);
          i += 3;        
       }
@@ -100,13 +100,13 @@ int main(int argc, char* argv[])
       exit(0);
    }
    
-   ElementType rSize = 3.0 / zoomFactor;
-   ElementType iSize = 3.0 * (ElementType)height / (ElementType)width / zoomFactor;
+   ElementType rSize = 3.0f / zoomFactor;
+   ElementType iSize = 3.0f * (ElementType)height / (ElementType)width / zoomFactor;
    
-   ElementType rMin = x - rSize / 2.0;
-   ElementType rMax = x + rSize / 2.0;
-   ElementType iMin = y - iSize / 2.0;
-   ElementType iMax = y + iSize / 2.0;
+   ElementType rMin = x - rSize / 2.0f;
+   ElementType rMax = x + rSize / 2.0f;
+   ElementType iMin = y - iSize / 2.0f;
+   ElementType iMax = y + iSize / 2.0f;
 
    BYTE* image;
    image = (BYTE*) malloc(3 * (DimensionSqType)height * (DimensionType)width);
@@ -121,17 +121,17 @@ int main(int argc, char* argv[])
    
    if (frames > 1)
    {
-      ElementType zoomMultiplyer = pow(endZoom - zoomFactor, 1.0/frames);
+      ElementType zoomMultiplyer = pow(endZoom - zoomFactor, (ElementType)1.0/frames);
       
       for (FrameType i = 2; i <= frames; i++)
       {         
          rSize /= zoomMultiplyer;
          iSize /= zoomMultiplyer;
          
-         rMin = x - rSize / 2.0;
-         rMax = x + rSize / 2.0;
-         iMin = y - iSize / 2.0;
-         iMax = y + iSize / 2.0;
+         rMin = x - rSize / 2.0f;
+         rMax = x + rSize / 2.0f;
+         iMin = y - iSize / 2.0f;
+         iMax = y + iSize / 2.0f;
          
          sprintf (filename, "img%05u.bmp", i);
 

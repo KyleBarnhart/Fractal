@@ -1,24 +1,39 @@
 #include <cstdlib>
 #include <cmath>
+#include <iostream>
+
+#include <cuda_runtime.h>
+#include "device_launch_parameters.h"
 
 #include "fractal.h"
 #include "common.h"
 
 // Calculate if c is in Mandelbrot set.
 // Return number of iterations.
-inline ElementType mandelbrot(ElementType c_r, ElementType c_i, IterationType iterations)
+__global__ void mandelbrot(float* img, float yMax, float xMin, float xScale, float yScale, unsigned iterations, unsigned width, unsigned height)
 {  
-   ElementType z_r = c_r;
-   ElementType z_i = c_i;
+   unsigned long c = blockIdx.x * BLOCK_WIDTH + threadIdx.x;
+
+   if(c >= height * width)
+		return;
+
+   unsigned y = c / width;
+   unsigned x =  c % width;
    
-   ElementType z2_r = z_r * z_r;
-   ElementType z2_i = z_i * z_i;
+   float c_i = yMax - (float)y * yScale;
+   float c_r = xMin + (float)x * xScale;
+
+   float z_r = c_r;
+   float z_i = c_i;
    
-   IterationType n = 0;
+   float z2_r = z_r * z_r;
+   float z2_i = z_i * z_i;
    
-   while(n < iterations && z2_r + z2_i < 4)
+   unsigned n = 0;
+   
+   while(n < iterations && z2_r + z2_i < 4.0f)
    {           
-      z_i = 2.0 * z_r * z_i + c_i;
+      z_i = 2.0f * z_r * z_i + c_i;
       z_r = z2_r - z2_i + c_r;
    
       z2_r = z_r * z_r;
@@ -26,33 +41,42 @@ inline ElementType mandelbrot(ElementType c_r, ElementType c_i, IterationType it
       
       n++;
    }
-   
-   // Iterate 2 more times to prevent errors
-   z_i = 2.0 * z_r * z_i + c_i;
-   z_r = z2_r - z2_i + c_r;
 
+   z_i = 2.0f * z_r * z_i + c_i;
+   z_r = z2_r - z2_i + c_r;
+   
    z2_r = z_r * z_r;
    z2_i = z_i * z_i;
 
-   z_i = 2.0 * z_r * z_i + c_i;
+   z_i = 2.0f * z_r * z_i + c_i;
    z_r = z2_r - z2_i + c_r;
-
+   
    z2_r = z_r * z_r;
    z2_i = z_i * z_i;
-   
+      
    n += 2;
 
-   if (n > iterations)
-	   return iterations;
+   if(n > iterations)
+   {
+		img[c] = (float)iterations;
+   }
+   else
+   {
+      img[c] = (float)n - log(log(sqrt(z2_r + z2_i)))/log(2.0f);
+   }
+}
 
-   return (ElementType)n - log(log(sqrt(z2_r + z2_i)))/log(2.0);
+int displayCudeError(cudaError_t error) {
+	std::cerr << cudaGetErrorString(error) << std::endl;
+	std::cin.ignore();
+	exit((int)error);
 }
 
 ElementType antiAliasingSSAA(AlisingFactorType factor, IterationType iterations,
                            ElementType x, ElementType y,
                            ElementType xScale, ElementType yScale)
 {
-   ElementType c_i, c_r;
+   cudaError_t error;
 
    // Get sub pixel width and height
    ElementType xSubScale = xScale / ((ElementType)factor);
@@ -67,26 +91,29 @@ ElementType antiAliasingSSAA(AlisingFactorType factor, IterationType iterations,
    ElementType* n = NULL;
    n = (ElementType*) malloc(factor * factor * sizeof(ElementType));
    
-   /* The x,y is the centre.
-	* Divide the pixel into factor^2 subpixels and find centre of each.
-	*/
-   for(AlisingFactorSqType y = 0; y < factor; y++)
-   {
-      c_i = yMax - (ElementType)y * ySubScale;
-      
-      for(AlisingFactorSqType x = 0; x < factor; x++)
-      {
-         c_r = xMin + (ElementType)x * xSubScale;
-         
-         n[y * factor + x] = mandelbrot(c_r, c_i, iterations);
-      }
-   }
+   // Get the values for each pixel in fractal   
+   ElementType* deviceImg;
+   error = cudaMalloc((void**)&deviceImg, factor2 * sizeof(ElementType));
+   if(error != cudaSuccess)
+		displayCudeError(error);
    
-   ElementType rtnValue = median(n, factor2);
+   mandelbrot<<<1, factor2>>>(deviceImg, yMax, xMin, xSubScale, ySubScale, iterations, factor, factor);
+   if ((error = cudaGetLastError()) != cudaSuccess)
+		displayCudeError(error);
+
+   error = cudaMemcpy(n, deviceImg, factor2 * sizeof(ElementType), cudaMemcpyDeviceToHost);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+   
+   error = cudaFree(deviceImg);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   ElementType result = median(n, factor2);
    
    free(n);
-   
-   return rtnValue;
+
+   return result;
 }
 
 void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
@@ -102,9 +129,9 @@ void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
                 IterationType iterations, ElementType xMin, ElementType xMax,
                 ElementType yMin, ElementType yMax, AlisingFactorType ssaaFactor)
 {
+   cudaError_t error;
+
    // Cast things to a size that prevents many casts later
-   ElementType c_i;
-   ElementType c_r;
    DimensionSqType width = imgWidth;
    DimensionSqType height = imgHeight;
    DimensionSqType resolution = width * height;
@@ -113,42 +140,54 @@ void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
    ElementType xScale = (xMax - xMin) / ((ElementType)width);
    ElementType yScale = (yMax - yMin) / ((ElementType)height);
    
-   // Used to make colour change smoother
-   IterationType* nValues;
-   nValues = (IterationType*) malloc ((uint64_t)resolution * (uint64_t)sizeof(IterationType));
-   if (nValues == NULL)
+   // Array of floats for the GPU
+   ElementType* deviceImg;
+   error = cudaMalloc((void**)&deviceImg, resolution * sizeof(ElementType));
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   error = cudaMemset(deviceImg, 0, resolution * sizeof(ElementType));
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   // Run fractal on GPU
+   CudaIndexType blocks = resolution / BLOCK_WIDTH + (resolution % BLOCK_WIDTH > 0 ? 1 : 0);
+   mandelbrot<<<blocks, BLOCK_WIDTH>>>(deviceImg, yMax, xMin, xScale, yScale, iterations, width, height);
+   if ((error = cudaGetLastError()) != cudaSuccess)
+		displayCudeError(error);
+
+   // Contains actual results
+   ElementType* imgValues = NULL;
+   imgValues = (ElementType*) malloc (resolution * sizeof(ElementType));
+   if (imgValues == NULL)
       exit (1);
    
-   ElementType* imgValues;
-   imgValues = (ElementType*) malloc ((uint64_t)resolution * (uint64_t)sizeof(ElementType));
-   if (imgValues == NULL)
+   // Get fractal values from GPU
+   error = cudaMemcpy(imgValues, deviceImg, resolution * sizeof(ElementType), cudaMemcpyDeviceToHost);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   error = cudaFree(deviceImg);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   // Used to compute edges and histogram
+   unsigned long* nValues = NULL;
+   nValues = (unsigned long*) malloc (resolution * sizeof(unsigned long));
+   if (nValues == NULL)
       exit (2);
 
-   ElementType n;
-   DimensionSqType c;
-
-   // Get the values for each pixel in fractal
-   for(DimensionSqType y = 0; y < height; y++)
+   // Get integer values of fractal floats
+   for(unsigned long i = 0; i < resolution; i++)
    {
-      c_i = yMax - (ElementType)y * yScale;
-      c = y * width;
-
-      for(DimensionSqType x = 0; x < width; x++)
-      {
-         c_r = xMin + (ElementType)x * xScale;
-
-         n = mandelbrot(c_r, c_i, iterations);
-
-         imgValues[c + x] = n;
-
-         nValues[c + x] = (IterationType)n;
-      }
+      nValues[i] = (unsigned long)imgValues[i];
    }
 
    //Anti-alising
    if(ssaaFactor > 1)
    {
       IterationType nInt;
+      DimensionSqType c;
       
       //Corners
       c = 0;
