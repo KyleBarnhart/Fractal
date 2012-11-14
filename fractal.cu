@@ -1,6 +1,5 @@
 #include <cstdlib>
 #include <cmath>
-#include <iostream>
 
 #include <cuda_runtime.h>
 #include "device_launch_parameters.h"
@@ -8,32 +7,74 @@
 #include "fractal.h"
 #include "common.h"
 
-// Calculate if c is in Mandelbrot set.
-// Return number of iterations.
-__global__ void mandelbrot(float* img, float yMax, float xMin, float xScale, float yScale, unsigned iterations, unsigned width, unsigned height)
-{  
-   unsigned long c = blockIdx.x * BLOCK_WIDTH + threadIdx.x;
+__device__ void swap(ElementType* a, ElementType* b)
+{
+   ElementType t = *a;
+   *a = *b;
+   *b = t;
+}
 
-   if(c >= height * width)
-		return;
+__device__ ElementType getMedian(ElementType* arr, AlisingFactorSqType n) 
+{
+    AlisingFactorSqType low, high ;
+    AlisingFactorSqType median;
+    AlisingFactorSqType middle, ll, hh;
 
-   unsigned y = c / width;
-   unsigned x =  c % width;
-   
-   float c_i = yMax - (float)y * yScale;
-   float c_r = xMin + (float)x * xScale;
+    low = 0 ; high = n-1 ; median = (low + high) / 2;
+    for (;;) {
+        if (high <= low) /* One element only */
+            return arr[median] ;
 
-   float z_r = c_r;
-   float z_i = c_i;
+        if (high == low + 1) {  /* Two elements only */
+            return (arr[low] + arr[high]) / 2 ;
+        }
+
+       /* Find median of low, middle and high items; swap into position low */
+       middle = (low + high) / 2;
+       if (arr[middle] > arr[high])    swap(&arr[middle], &arr[high]) ;
+       if (arr[low] > arr[high])       swap(&arr[low], &arr[high]) ;
+       if (arr[middle] > arr[low])     swap(&arr[middle], &arr[low]) ;
+
+       /* Swap low item (now in position middle) into position (low+1) */
+       swap(&arr[middle], &arr[low+1]) ;
+
+       /* Nibble from each end towards middle, swapping items when stuck */
+       ll = low + 1;
+       hh = high;
+       for (;;) {
+           do ll++; while (arr[low] > arr[ll]) ;
+           do hh--; while (arr[hh]  > arr[low]) ;
+
+           if (hh < ll)
+           break;
+
+           swap(&arr[ll], &arr[hh]) ;
+       }
+
+       /* Swap middle item (in position low) back into correct position */
+       swap(&arr[low], &arr[hh]) ;
+
+       /* Re-set active partition */
+       if (hh <= median)
+           low = ll;
+       if (hh >= median)
+           high = hh - 1;
+    }
+}
+
+__device__ ElementType mandelbrot(ElementType c_i, ElementType c_r, IterationType iterations)
+{
+   ElementType z_r = c_r;
+   ElementType z_i = c_i;
    
-   float z2_r = z_r * z_r;
-   float z2_i = z_i * z_i;
+   ElementType z2_r = z_r * z_r;
+   ElementType z2_i = z_i * z_i;
    
-   unsigned n = 0;
+   IterationType n = 0;
    
-   while(n < iterations && z2_r + z2_i < 4.0f)
+   while(n < iterations && z2_r + z2_i < 4.0)
    {           
-      z_i = 2.0f * z_r * z_i + c_i;
+      z_i = 2.0 * z_r * z_i + c_i;
       z_r = z2_r - z2_i + c_r;
    
       z2_r = z_r * z_r;
@@ -42,13 +83,13 @@ __global__ void mandelbrot(float* img, float yMax, float xMin, float xScale, flo
       n++;
    }
 
-   z_i = 2.0f * z_r * z_i + c_i;
+   z_i = 2.0 * z_r * z_i + c_i;
    z_r = z2_r - z2_i + c_r;
    
    z2_r = z_r * z_r;
    z2_i = z_i * z_i;
 
-   z_i = 2.0f * z_r * z_i + c_i;
+   z_i = 2.0 * z_r * z_i + c_i;
    z_r = z2_r - z2_i + c_r;
    
    z2_r = z_r * z_r;
@@ -58,112 +99,281 @@ __global__ void mandelbrot(float* img, float yMax, float xMin, float xScale, flo
 
    if(n > iterations)
    {
-		img[c] = (float)iterations;
+		return (ElementType)iterations;
    }
    else
    {
-      img[c] = (float)n - log(log(sqrt(z2_r + z2_i)))/log(2.0f);
+      return (ElementType)n + 1.0 - log(log(sqrt(z2_r + z2_i)))/log(2.0);;
    }
 }
 
-int displayCudeError(cudaError_t error) {
-	std::cerr << cudaGetErrorString(error) << std::endl;
-	std::cin.ignore();
-	exit((int)error);
+// Calculate if c is in Mandelbrot set.
+// Return number of iterations.
+__global__ void getFractal(ElementType* img, ElementType yMax, ElementType xMin, ElementType xScale, ElementType yScale, IterationType iterations, DimensionType width, DimensionType height)
+{  
+   DimensionType dx = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+   DimensionType dy = blockIdx.y * BLOCK_SIZE + threadIdx.y;
+
+   if(dx >= width || dy >= height)
+		return;
+   
+   ElementType c_i = yMax - (ElementType)dy * yScale;
+   ElementType c_r = xMin + (ElementType)dx * xScale;
+
+   DimensionSqType c = (DimensionSqType)dy * (DimensionSqType)width + (DimensionSqType)dx;
+   img[c] = mandelbrot(c_i, c_r, iterations);
 }
 
-ElementType antiAliasingSSAA(AlisingFactorType factor, IterationType iterations,
-                           ElementType x, ElementType y,
-                           ElementType xScale, ElementType yScale)
-{
-   cudaError_t error;
+// Calculate if c is in Mandelbrot set.
+// Return number of iterations.
+__global__ void getFractalSSAA(ElementType* img, DimensionSqType* list, DimensionSqType length, ElementType yMax, ElementType xMin,
+                               ElementType xScale, ElementType yScale, IterationType iterations,
+                               DimensionType width, AlisingFactorType ssaafactor)
+{  
+   DimensionType curr = blockIdx.x * BLOCK_SIZE * BLOCK_SIZE + threadIdx.x;
+
+   if(curr >= length)
+		return;
+
+   DimensionType dx = list[curr] % width;
+   DimensionType dy = list[curr] / width;
+
+   ElementType c_i = yMax - (ElementType)dy * yScale;
+   ElementType c_r = xMin + (ElementType)dx * xScale;
 
    // Get sub pixel width and height
-   ElementType xSubScale = xScale / ((ElementType)factor);
-   ElementType ySubScale = yScale / ((ElementType)factor);
+   ElementType xSubScale = xScale / ((ElementType)ssaafactor);
+   ElementType ySubScale = yScale / ((ElementType)ssaafactor);
    
    // Get the centre of the top left subpixel
-   ElementType xMin = x - (xScale / 2.0) + (xSubScale / 2.0);
-   ElementType yMax = y + (yScale / 2.0) - (ySubScale / 2.0);
+   xMin = c_r - (xScale / 2.0) + (xSubScale / 2.0);
+   yMax = c_i + (yScale / 2.0) - (ySubScale / 2.0);
 
-   AlisingFactorSqType factor2 = factor * factor;
-   
-   ElementType* n = NULL;
-   n = (ElementType*) malloc(factor * factor * sizeof(ElementType));
+   AlisingFactorSqType factor2 = (AlisingFactorSqType)ssaafactor * (AlisingFactorSqType)ssaafactor;
    
    // Get the values for each pixel in fractal   
+   ElementType subpixels[MAX_ALIASING_FACTOR * MAX_ALIASING_FACTOR];
+   
+   for(AlisingFactorType x = 0; x < ssaafactor; x++)
+   {
+      for(AlisingFactorType y = 0; y < ssaafactor; y++)
+      {
+         subpixels[x * ssaafactor + y] = mandelbrot(yMax - ySubScale * y , xMin + xSubScale * x, iterations);
+      }
+   }
+
+   img[list[curr]] = getMedian(subpixels, factor2);
+}
+
+void antiAliasingSSAA(ElementType* image, DimensionType width, DimensionType height,
+                           AlisingFactorType ssaaFactor, IterationType iterations,
+                           ElementType yMax, ElementType xMin,
+                           ElementType xScale, ElementType yScale)
+{
+   DimensionSqType* ssaaMap = NULL;
+   ssaaMap = (DimensionSqType*) malloc((DimensionSqType)width * (DimensionSqType)height * (DimensionSqType)sizeof(ElementType));
+
+   DimensionSqType c = 0;
+   IterationType nInt = (IterationType)image[c];
+   DimensionSqType counter = 0;
+
+   //Corners
+   if(nInt != (IterationType)image[c + 1] ||
+      nInt != (IterationType)image[c + height])
+   {
+      ssaaMap[counter] = c;
+      ++counter;
+   }
+      
+   c = width * (height - 1);
+   nInt = (IterationType)image[c];
+   if(nInt != (IterationType)image[c + 1] ||
+      nInt != (IterationType)image[c - width])
+   {
+      ssaaMap[counter] = c;
+      ++counter;
+   }
+      
+   c = width - 1;
+   nInt = (IterationType)image[c];
+   if(nInt != (IterationType)image[c - 1] ||
+      nInt != (IterationType)image[c + height])
+   {
+      ssaaMap[counter] = c;
+      ++counter;
+   }
+      
+   c = width * height - 1;
+   nInt = (IterationType)image[c];
+   if(nInt != (IterationType)image[c - 1] ||
+      nInt != (IterationType)image[c - width])
+   {
+      ssaaMap[counter] = c;
+      ++counter;
+   }
+      
+   //Top border
+   for(DimensionSqType x = 1; x < width - 1; x++)
+   {
+      nInt = (IterationType)image[x];
+         
+      if(nInt != (IterationType)image[x - 1] ||
+         nInt != (IterationType)image[x + 1] ||
+         nInt != (IterationType)image[x + width])
+      {
+         ssaaMap[counter] = c;
+         ++counter;                          
+      }
+   }
+      
+   //Left border
+   for(DimensionSqType y = 1; y < height - 1; y++)
+   {
+      c = y * width;
+      nInt = (IterationType)image[c];
+         
+      if(nInt != (IterationType)image[c + 1] ||
+         nInt != (IterationType)image[c - width] ||
+         nInt != (IterationType)image[c + width])
+      {
+         ssaaMap[counter] = c;
+         ++counter;
+      }
+   }
+      
+   //Bottom border
+   for(DimensionSqType x = 1; x < width - 1; x++)
+   {
+      c = width * (height - 1) + x;
+      nInt = (IterationType)image[c];
+         
+      if(nInt != (IterationType)image[c - 1] ||
+         nInt != (IterationType)image[c + 1] || 
+         nInt != (IterationType)image[c - width])
+      {
+         ssaaMap[counter] = c;
+         ++counter;
+      }
+   }
+      
+   //Right border
+   for(DimensionSqType y = 1; y < height - 1; y++)
+   {
+      c = y * width - 1;
+      nInt = (IterationType)image[c];
+         
+      if(nInt != (IterationType)image[c - 1] ||
+         nInt != (IterationType)image[c - width] ||
+         nInt != (IterationType)image[c + width])
+      {
+         ssaaMap[counter] = c;
+         ++counter;
+      }
+   }
+      
+   // Middle
+   for(DimensionSqType y = 1; y < height - 1; y++)
+   {      
+      for(DimensionSqType x = 1; x < width - 1; x++)
+      {
+         c = width * y + x;
+         nInt = (IterationType)image[c];
+            
+         if(nInt != (IterationType)image[c - 1] ||
+            nInt != (IterationType)image[c + 1] ||
+            nInt != (IterationType)image[c - width] ||
+            nInt != (IterationType)image[c + width])
+         {
+            ssaaMap[counter] = c;
+            ++counter;
+         }
+      }
+   }
+
+   ssaaMap = (DimensionSqType*) realloc(ssaaMap, counter * sizeof(DimensionSqType));
+
+   cudaError_t error;
+
+   DimensionSqType arraySize = (DimensionSqType)width * (DimensionSqType)height * (DimensionSqType)sizeof(ElementType);
+   
+   // Get the values for each pixel in fractal   
+   DimensionSqType* ssaaMapDevice;
+   error = cudaMalloc((void**)&ssaaMapDevice, counter * sizeof(DimensionSqType));
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   error = cudaMemcpy(ssaaMapDevice, ssaaMap, counter * sizeof(DimensionSqType), cudaMemcpyHostToDevice);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   free(ssaaMap);
+
+   // Array of floats for the GPU
    ElementType* deviceImg;
-   error = cudaMalloc((void**)&deviceImg, factor2 * sizeof(ElementType));
+   error = cudaMalloc((void**)&deviceImg, arraySize);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   error = cudaMemcpy(deviceImg, image, arraySize, cudaMemcpyHostToDevice);
    if(error != cudaSuccess)
 		displayCudeError(error);
    
-   mandelbrot<<<1, factor2>>>(deviceImg, yMax, xMin, xSubScale, ySubScale, iterations, factor, factor);
+   unsigned blocks = (counter / (BLOCK_SIZE * BLOCK_SIZE)) + ((counter % (BLOCK_SIZE * BLOCK_SIZE) == 0) ? 0 : 1);
+   getFractalSSAA<<<blocks, BLOCK_SIZE * BLOCK_SIZE>>>(deviceImg, ssaaMapDevice, counter, yMax, xMin,
+                               xScale, yScale, iterations,
+                               width, ssaaFactor);
    if ((error = cudaGetLastError()) != cudaSuccess)
 		displayCudeError(error);
 
-   error = cudaMemcpy(n, deviceImg, factor2 * sizeof(ElementType), cudaMemcpyDeviceToHost);
+   // Get fractal values from GPU
+   error = cudaMemcpy(image, deviceImg, arraySize, cudaMemcpyDeviceToHost);
    if(error != cudaSuccess)
 		displayCudeError(error);
-   
+
    error = cudaFree(deviceImg);
    if(error != cudaSuccess)
 		displayCudeError(error);
-
-   ElementType result = median(n, factor2);
    
-   free(n);
-
-   return result;
+   error = cudaFree(ssaaMapDevice);
+   if(error != cudaSuccess)
+		displayCudeError(error);
 }
 
-void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
-                IterationType iterations, ElementType xMin, ElementType xMax,
-                ElementType yMin, ElementType yMax)
-{
-   fractal(image, imgWidth, imgHeight,
-                iterations, xMin, xMax,
-                yMin, yMax, 0);
-}
-
-void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
+void fractal(ElementType* image, DimensionType width, DimensionType height,
                 IterationType iterations, ElementType xMin, ElementType xMax,
                 ElementType yMin, ElementType yMax, AlisingFactorType ssaaFactor)
 {
    cudaError_t error;
-
-   // Cast things to a size that prevents many casts later
-   DimensionSqType width = imgWidth;
-   DimensionSqType height = imgHeight;
-   DimensionSqType resolution = width * height;
    
    // Get width and height of pixel
    ElementType xScale = (xMax - xMin) / ((ElementType)width);
    ElementType yScale = (yMax - yMin) / ((ElementType)height);
-   
+
+   DimensionSqType arraySize = (DimensionSqType)width * (DimensionSqType)height * (DimensionSqType)sizeof(ElementType);
+
    // Array of floats for the GPU
    ElementType* deviceImg;
-   error = cudaMalloc((void**)&deviceImg, resolution * sizeof(ElementType));
+   error = cudaMalloc((void**)&deviceImg, arraySize);
    if(error != cudaSuccess)
 		displayCudeError(error);
 
-   error = cudaMemset(deviceImg, 0, resolution * sizeof(ElementType));
+   error = cudaMemset(deviceImg, 0, arraySize);
    if(error != cudaSuccess)
 		displayCudeError(error);
 
    // Run fractal on GPU
-   CudaIndexType blocks = resolution / BLOCK_WIDTH + (resolution % BLOCK_WIDTH > 0 ? 1 : 0);
-   mandelbrot<<<blocks, BLOCK_WIDTH>>>(deviceImg, yMax, xMin, xScale, yScale, iterations, width, height);
+   int gridWidth = (width / BLOCK_SIZE) + (width % BLOCK_SIZE > 0 ? 1 : 0);
+   int gridHeight =  (height / BLOCK_SIZE) + (height % BLOCK_SIZE > 0 ? 1 : 0);
+
+   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
+   dim3 dimGrid(gridWidth, gridHeight);
+
+   getFractal<<<dimGrid, dimBlock>>>(deviceImg, yMax, xMin, xScale, yScale, iterations, width, height);
    if ((error = cudaGetLastError()) != cudaSuccess)
 		displayCudeError(error);
 
-   // Contains actual results
-   ElementType* imgValues = NULL;
-   imgValues = (ElementType*) malloc (resolution * sizeof(ElementType));
-   if (imgValues == NULL)
-      exit (1);
-   
    // Get fractal values from GPU
-   error = cudaMemcpy(imgValues, deviceImg, resolution * sizeof(ElementType), cudaMemcpyDeviceToHost);
+   error = cudaMemcpy(image, deviceImg, arraySize, cudaMemcpyDeviceToHost);
    if(error != cudaSuccess)
 		displayCudeError(error);
 
@@ -171,207 +381,8 @@ void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
    if(error != cudaSuccess)
 		displayCudeError(error);
 
-   // Used to compute edges and histogram
-   unsigned long* nValues = NULL;
-   nValues = (unsigned long*) malloc (resolution * sizeof(unsigned long));
-   if (nValues == NULL)
-      exit (2);
-
-   // Get integer values of fractal floats
-   for(unsigned long i = 0; i < resolution; i++)
-   {
-      nValues[i] = (unsigned long)imgValues[i];
-   }
-
-   //Anti-alising
    if(ssaaFactor > 1)
    {
-      IterationType nInt;
-      DimensionSqType c;
-      
-      //Corners
-      c = 0;
-      nInt = nValues[c];
-      if(nValues[c + 1] != nInt ||
-         nValues[c + height] != nInt)
-      {
-         imgValues[c] = antiAliasingSSAA(ssaaFactor, iterations,
-								           xMin, yMax,
-                                   xScale, yScale);
-      }
-      
-      c = width * (height - 1);
-      nInt = nValues[c];
-      if(nValues[c + 1] != nInt ||
-         nValues[c - width] != nInt)
-      {
-         imgValues[c] = antiAliasingSSAA(ssaaFactor, iterations,
-                                   xMin, yMin,
-                                   xScale, yScale);
-      }
-      
-      c = width - 1;
-      nInt = nValues[c];
-      if(nValues[c - 1] != nInt ||
-         nValues[c + height] != nInt)
-      {
-         imgValues[c] = antiAliasingSSAA(ssaaFactor, iterations,
-                                   xMax, yMax,
-                                   xScale, yScale);
-      }
-      
-      c = width * height - 1;
-      nInt = nValues[c];
-      if(nValues[c - 1] != nInt ||
-         nValues[c - width] != nInt)
-      {
-         imgValues[c] = antiAliasingSSAA(ssaaFactor, iterations,
-                                   xMax, yMin,
-                                   xScale, yScale);
-      }
-      
-      //Top border
-      for(DimensionSqType x = 1; x < width - 1; x++)
-      {
-         nInt = nValues[x];
-         
-         if(nValues[x - 1] != nInt ||
-            nValues[x + 1] != nInt ||
-            nValues[x + width] != nInt)
-         {
-            imgValues[x] = antiAliasingSSAA(ssaaFactor, iterations,
-                                      xMin + x * xScale, yMax,
-                                      xScale, yScale);                          
-         }
-      }
-      
-      //Left border
-      for(DimensionSqType y = 1; y < height - 1; y++)
-      {
-         c = y * width;
-         nInt = nValues[c];
-         
-         if(nValues[c + 1] != nInt ||
-            nValues[c - width] != nInt ||
-            nValues[c + width] != nInt)
-         {
-            imgValues[c] = antiAliasingSSAA(ssaaFactor, iterations,
-                                      xMin, yMax - y * yScale,
-                                      xScale, yScale);
-         }
-      }
-      
-      //Bottom border
-      for(DimensionSqType x = 1; x < width - 1; x++)
-      {
-         c = width * (height - 1) + x;
-         nInt = nValues[c];
-         
-         if(nValues[c - 1] != nInt ||
-            nValues[c + 1] != nInt || 
-            nValues[c - width] != nInt)
-         {
-            imgValues[c] = antiAliasingSSAA(ssaaFactor, iterations,
-                                      xMin + x * xScale, yMin,
-                                      xScale, yScale);
-         }
-      }
-      
-      //Right border
-      for(DimensionSqType y = 1; y < height - 1; y++)
-      {
-         c = y * width - 1;
-         nInt = nValues[c];
-         
-         if(nValues[c - 1] != nInt ||
-            nValues[c - width] != nInt ||
-            nValues[c + width] != nInt)
-         {
-            imgValues[c] = antiAliasingSSAA(ssaaFactor, iterations,
-                                      xMax, yMax - y * yScale,
-                                      xScale, yScale);
-         }
-      }
-      
-      // Middle
-      for(DimensionSqType y = 1; y < height - 1; y++)
-      {      
-         for(DimensionSqType x = 1; x < width - 1; x++)
-         {
-            c = width * y + x;
-            nInt = nValues[c];
-            
-            if(nValues[c - 1] != nInt ||
-               nValues[c + 1] != nInt ||
-               nValues[c - width] != nInt ||
-               nValues[c + width] != nInt)
-            {
-               imgValues[c] = antiAliasingSSAA(ssaaFactor, iterations,
-                                         xMin + x * xScale, yMax - y * yScale,
-                                         xScale, yScale);
-            }
-         }
-      }
+      antiAliasingSSAA(image, width, height, ssaaFactor, iterations, yMax, xMin, xScale, yScale);
    }
-   
-   // Make histogram
-   DimensionSqType* histogram = NULL;
-   histogram = (DimensionSqType*) calloc(iterations + 1, sizeof(DimensionSqType));
-   if (histogram == NULL)
-      exit (3);
-
-   for(DimensionSqType i = 0; i < height * width; i++)
-   {  
-      histogram[nValues[i]]++;
-   }
-   
-   // Used to map colours to pixels
-   ElementType* map = NULL;
-   map = (ElementType*) malloc((iterations + 1) * sizeof(ElementType));
-   if (map == NULL)
-      exit (4);
-      
-   map[0] = 0.0;
-
-   // Map colors to pixels based on the histogram
-   for(IterationType i = 1; i < iterations + 1; i++)
-   {
-      if (histogram[i] == 0)
-         map[i] = map[i-1];
-      else
-         map[i] = map[i-1] + (ElementType)histogram[i] / (ElementType)resolution;
-   }
-
-   free(histogram);
-   
-   ElementType val;
-   ElementType colourVal;
-   IterationType ival;
-   DimensionSqType position = 0;
-   
-   BYTE* rgbValue;
-   rgbValue = (BYTE*) malloc(3);
-
-   for(DimensionSqType i = 0; i < resolution; i++)
-   {
-      val = imgValues[i];
-      ival = nValues[i];
-
-      colourVal = 1.0;
-      if (ival < iterations)
-         colourVal = map[ival] + (val - (ElementType)ival) * (map[ival + 1] - map[ival]);
-         
-      getRGB(colourVal, rgbValue);
-      
-      image[i*3]      = rgbValue[0];
-      image[i*3 + 1]  = rgbValue[1];
-      image[i*3 + 2]  = rgbValue[2];
-      
-      position += 3;
-   }
-   
-   free(rgbValue);
-   free(map);
-   free(imgValues);
-   free(nValues);
 }

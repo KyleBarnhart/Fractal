@@ -36,7 +36,9 @@ public:
 void saveAsBmp(BYTE* image, DimensionType width, DimensionType height,
                const char* filename);
 
-void saveAsBmpOld(const unsigned char* img, int w, int h,
+void startBmp(DimensionType width, DimensionType height,
+               const char* filename);
+void appendBmp(BYTE* image, DimensionType width, DimensionType height,
                const char* filename);
 
 #endif

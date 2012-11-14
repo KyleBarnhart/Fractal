@@ -78,11 +78,16 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="fractal.cu" />
+    <CudaCompile Include="fractal.cu">
+      <CodeGeneration Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">compute_20,sm_20</CodeGeneration>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="bmp.cpp" />
-    <ClCompile Include="common.cpp" />
+    <CudaCompile Include="common.cu">
+      <FileType>Document</FileType>
+      <CodeGeneration Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">compute_20,sm_20</CodeGeneration>
+    </CudaCompile>
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>

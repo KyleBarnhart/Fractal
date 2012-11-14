@@ -3,11 +3,7 @@
 
 #include "common.h"
 
-void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
-                IterationType iterations, ElementType xMin, ElementType xMax,
-                ElementType yMin, ElementType yMax);
-
-void fractal(BYTE* image, DimensionType imgWidth, DimensionType imgHeight,
+void fractal(ElementType* image, DimensionType width, DimensionType height,
                 IterationType iterations, ElementType xMin, ElementType xMax,
                 ElementType yMin, ElementType yMax, AlisingFactorType ssaaFactor = 0);
 
