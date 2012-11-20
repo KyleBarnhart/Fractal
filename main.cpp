@@ -13,9 +13,9 @@ using namespace std;
 int main(int argc, char* argv[])
 {                      
    ElementType zoomFactor = 1.0;
-   ElementType x = -0.5;//0.001643721969;//-0.5;
-   ElementType y = 0.0;//-0.8224676332991;//0.0;
-   AlisingFactorType ssaa = 4;
+   ElementType x = -0.5;
+   ElementType y = 0.0;
+   AlisingFactorType ssaa = 0;
    DimensionType width = 1920;
    DimensionType height = 1080;
    IterationType iterations = 50;

@@ -78,7 +78,7 @@ ElementType ssaaPixel(DimensionSqType index, ElementType yMax, ElementType xMin,
    {
       for(AlisingFactorType y = 0; y < ssaafactor; y++)
       {
-         subpixels[x * ssaafactor + y] = mandelbrot(c_r + xSubScale * x, c_i - ySubScale * y, iterations);
+         subpixels[x * ssaafactor + y] = mandelbrot(xSubMin + xSubScale * x, ySubMax - ySubScale * y, iterations);
       }
    }
 
@@ -239,14 +239,11 @@ void fractal(ElementType* image, DimensionType imgWidth, DimensionType imgHeight
    // Save from casting many times
    DimensionSqType width = (DimensionSqType)imgWidth;
    DimensionSqType height = (DimensionSqType)imgHeight;
-
-   DimensionSqType arraySize = (DimensionSqType)width * (DimensionSqType)height * (DimensionSqType)sizeof(ElementType);
    
    // Get width and height of pixel
    ElementType xScale = (xMax - xMin) / ((ElementType)width);
    ElementType yScale = (yMax - yMin) / ((ElementType)height);
 
-   ElementType n;
    DimensionSqType c;
 
    // Get the values for each pixel in fractal

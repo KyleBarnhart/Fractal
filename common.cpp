@@ -135,8 +135,6 @@ void histogramToColourMap(DimensionSqType* histogram, ElementType* map, Iteratio
 
 void valueToRGB(ElementType* values, BYTE* image, IterationType iterations, DimensionType width, DimensionType height)
 { 
-   DimensionSqType resolution = (DimensionSqType)width * (DimensionSqType)height;
-
    BYTE rgbValue[3];
 
    // Bytes
