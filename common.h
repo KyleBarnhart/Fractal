@@ -18,11 +18,13 @@ typedef uint8_t AlisingFactorType;
 typedef uint8_t AlisingFactorSqType;
 typedef uint16_t FrameType;
 
-const uint32_t MAX_RESOLUTION = 4294967295;
 const uint8_t MAX_ALIASING_FACTOR = 16;
+const uint32_t MAX_PIXELS_PER_PASS = 67108864;
 
-ElementType median(ElementType* arr, AlisingFactorSqType n);
+ElementType median(ElementType* arr, AlisingFactorSqType median, AlisingFactorSqType n);
 
-void getRGB(ElementType value, BYTE rgb[]);
+void histogramToColourMap(DimensionSqType* histogram, ElementType* map, IterationType iterations, DimensionSqType resolution);
+void valueToRGB(ElementType* values, BYTE* image, IterationType iterations, DimensionType width, DimensionType height);
+void mapValueToRGB(ElementType* map, ElementType* values, BYTE* image, IterationType iterations, DimensionType width, DimensionType height);
 
 #endif

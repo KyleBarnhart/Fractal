@@ -13,11 +13,11 @@ using namespace std;
 int main(int argc, char* argv[])
 {                      
    ElementType zoomFactor = 1.0;
-   ElementType x = -0.5;
-   ElementType y = 0.0;
-   AlisingFactorType ssaa = 0;
-   DimensionType width = 8000;
-   DimensionType height = 6000;
+   ElementType x = -0.5;//0.001643721969;//-0.5;
+   ElementType y = 0.0;//-0.8224676332991;//0.0;
+   AlisingFactorType ssaa = 4;
+   DimensionType width = 1920;
+   DimensionType height = 1080;
    IterationType iterations = 50;
    ElementType endZoom = 1.0;
    FrameType frames = 1;
@@ -88,12 +88,6 @@ int main(int argc, char* argv[])
       }
    }
 
-   if (height * width > MAX_RESOLUTION)
-   {
-      cout << "Resolution is too high.";
-      exit(0);
-   }
-
    if (ssaa > MAX_ALIASING_FACTOR)
    {
       cout << "Anti-alaising factor is too hight.";
@@ -103,45 +97,135 @@ int main(int argc, char* argv[])
    ElementType rSize = 3.0 / zoomFactor;
    ElementType iSize = 3.0 * (ElementType)height / (ElementType)width / zoomFactor;
    
-   ElementType rMin = x - rSize / 2.0;
-   ElementType rMax = x + rSize / 2.0;
-   ElementType iMin = y - iSize / 2.0;
-   ElementType iMax = y + iSize / 2.0;
+   DimensionSqType resolution = (DimensionSqType)width * (DimensionSqType)height;
 
-   BYTE* image;
-   image = (BYTE*) malloc(3 * (DimensionSqType)height * (DimensionType)width);
+   DimensionType rowsPerPass = (resolution < MAX_PIXELS_PER_PASS) ? height : MAX_PIXELS_PER_PASS / width;
+   DimensionType passes = (height / rowsPerPass) + ((height % rowsPerPass == 0) ? 0 : 1);
 
-   char* filename;
-   filename = (char*)malloc(13 * sizeof(char));
-   strcpy(filename, "img00001.bmp");
-   
-   fractal(image, width, height, iterations, rMin, rMax, iMin, iMax, ssaa);
-   
-   saveAsBmp(image, width, height, filename);
-   
-   if (frames > 1)
-   {
-      ElementType zoomMultiplyer = pow(endZoom - zoomFactor, 1.0/frames);
+   ElementType zoomMultiplyer = 1.0;
+   if (endZoom > zoomFactor)
+      zoomMultiplyer = pow(endZoom/zoomFactor, (ElementType)1.0/frames);
       
-      for (FrameType i = 2; i <= frames; i++)
-      {         
-         rSize /= zoomMultiplyer;
-         iSize /= zoomMultiplyer;
-         
-         rMin = x - rSize / 2.0;
-         rMax = x + rSize / 2.0;
-         iMin = y - iSize / 2.0;
-         iMax = y + iSize / 2.0;
-         
-         sprintf (filename, "img%05u.bmp", i);
+   for (FrameType f = 1; f < frames + 1; f++)
+   {                  
+      ElementType rMin = x - rSize / 2.0;
+      ElementType rMax = x + rSize / 2.0;
+      ElementType iMin = y - iSize / 2.0;
+      ElementType iMax = y + iSize / 2.0;
 
-         free(image);       
-         
-         fractal(image, width, height, iterations, rMin, rMax, iMin, iMax, ssaa);
-         saveAsBmp(image, width, height, filename);
+      DimensionType passHeight = rowsPerPass;
+      ElementType pass_iSize = iSize * ((ElementType)passHeight / (ElementType)height);
+
+      ElementType pass_iMax = iMax;
+      ElementType pass_iMin = iMax - pass_iSize;
+
+      // Get histogram
+      DimensionSqType* histogram = NULL;
+      histogram = (DimensionSqType*) malloc ((iterations + 1) * sizeof(DimensionSqType));
+      if (histogram == NULL)
+         exit (1);
+
+      memset(histogram, 0, (iterations + 1) * sizeof(DimensionSqType));
+
+      // Get fractal portion and save
+      for(DimensionType i = 0; i < passes; ++i)
+      {
+         if(pass_iMin < iMin)
+         {
+            passHeight = height - rowsPerPass * i;
+            pass_iMin = iMin;
+         }
+
+         DimensionSqType passResolution = (DimensionSqType)passHeight * (DimensionSqType)width;
+
+         // Get fractal values
+         ElementType* nValues;
+         nValues = (ElementType*) malloc (passResolution * sizeof(ElementType));
+         if (nValues == NULL)
+               exit (2);
+
+         fractal(nValues, width, passHeight, iterations, rMin, rMax, pass_iMin, pass_iMax, 0);
+
+         // Make histogram
+         for(DimensionSqType j = 0; j < passResolution; ++j)
+         {
+            histogram[(DimensionSqType)nValues[j]]++;
+         }
+
+         free(nValues);
+
+         pass_iMax -= pass_iSize;
+         pass_iMin -= pass_iSize;
       }
+
+      // Reset
+      passHeight = rowsPerPass;
+      pass_iMax = iMax;
+      pass_iMin = iMax - pass_iSize;
+
+      // Get colour map
+      // Used to map colours to pixels
+      ElementType* map = NULL;
+      map = (ElementType*) malloc((iterations + 1) * sizeof(ElementType));
+      if (map == NULL)
+         exit (3);
+
+      histogramToColourMap(histogram, map, iterations, resolution);
+
+      free(histogram);
+
+      // Create file
+      char* filename;
+      filename = (char*)malloc(40 * sizeof(char));
+      if (filename == NULL)
+            exit (4);
+      
+      sprintf (filename, "img%05u.bmp", f);
+
+      startBmp(width, height, filename);
+
+      // Get fractal portion and save
+      for(DimensionType i = 0; i < passes; i++)
+      {
+         if(pass_iMin < iMin)
+         {
+            passHeight = height - rowsPerPass * i;
+            pass_iMin = iMin;
+         }
+
+         DimensionSqType passResolution = (DimensionSqType)passHeight * (DimensionSqType)width;
+
+         // Get fractal values
+         ElementType* nValues;
+         nValues = (ElementType*) malloc (passResolution * sizeof(ElementType));
+         if (nValues == NULL)
+               exit (5);
+
+         fractal(nValues, width, passHeight, iterations, rMin, rMax, pass_iMin, pass_iMax, ssaa);
+
+         // Map values to rgb
+         BYTE* image;
+         image = (BYTE*) malloc (passResolution * 3); 
+         if (image == NULL)
+               exit (6);
+
+         mapValueToRGB(map, nValues, image, iterations, width, passHeight);
+
+         free(nValues);
+
+         // Save image
+         appendBmp(image, width, passHeight, filename);
+
+         free(image);
+
+         pass_iMax -= pass_iSize;
+         pass_iMin -= pass_iSize;
+      }
+
+      free(map);
+      free(filename);
+
+      rSize /= zoomMultiplyer;
+      iSize /= zoomMultiplyer;
    }
-   free(image);
-   free(filename);
-   
 }
