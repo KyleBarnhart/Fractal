@@ -130,10 +130,7 @@ void histogramToColourMap(DimensionSqType* histogram, ElementType* map, Iteratio
    // Map colors to pixels based on the histogram
    for(IterationType i = 1; i < iterations + 1; i++)
    {
-      if (histogram[i] == 0)
-         map[i] = map[i-1];
-      else
-         map[i] = map[i-1] + (ElementType)histogram[i] / res;
+      map[i] = map[i-1] + (ElementType)histogram[i] / res;
    }
 }
 

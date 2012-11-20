@@ -14,19 +14,20 @@ __device__ void swap(ElementType* a, ElementType* b)
    *b = t;
 }
 
-__device__ ElementType getMedian(ElementType* arr, AlisingFactorSqType n) 
+__device__ ElementType getMedian(ElementType* arr, AlisingFactorSqType median, AlisingFactorSqType n) 
 {
     AlisingFactorSqType low, high ;
-    AlisingFactorSqType median;
     AlisingFactorSqType middle, ll, hh;
 
-    low = 0 ; high = n-1 ; median = (low + high) / 2;
+    low = 0 ; high = n-1 ;
     for (;;) {
         if (high <= low) /* One element only */
             return arr[median] ;
 
         if (high == low + 1) {  /* Two elements only */
-            return (arr[low] + arr[high]) / 2 ;
+            if (arr[low] > arr[high])
+                ELEM_SWAP(arr[low], arr[high]) ;
+            return arr[median];
         }
 
        /* Find median of low, middle and high items; swap into position low */
@@ -162,7 +163,16 @@ __global__ void getFractalSSAA(ElementType* img, DimensionSqType* list, Dimensio
       }
    }
 
-   img[list[curr]] = getMedian(subpixels, factor2);
+   if(factor2 % 2 != 0)
+   {
+      img[list[curr]] = median(subpixels, factor2 / 2,  factor2);
+   }
+   else
+   {
+      img[list[curr]] rtn = (median(subpixels, factor2 / 2 - 1,  factor2)
+                           + median(subpixels, factor2 / 2,  factor2))
+                           / 2.0;
+   }
 }
 
 void antiAliasingSSAA(ElementType* image, DimensionType width, DimensionType height,
@@ -215,11 +225,12 @@ void antiAliasingSSAA(ElementType* image, DimensionType width, DimensionType hei
    //Top border
    for(DimensionSqType x = 1; x < width - 1; x++)
    {
-      nInt = (IterationType)image[x];
+      c = x;
+      nInt = (IterationType)image[c];
          
-      if(nInt != (IterationType)image[x - 1] ||
-         nInt != (IterationType)image[x + 1] ||
-         nInt != (IterationType)image[x + width])
+      if(nInt != (IterationType)image[c - 1] ||
+         nInt != (IterationType)image[c + 1] ||
+         nInt != (IterationType)image[c + width])
       {
          ssaaMap[counter] = c;
          ++counter;                          
