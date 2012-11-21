@@ -18,10 +18,10 @@ int main(int argc, char* argv[])
    ElementType zoomFactor = 1.0;
    ElementType x = -0.5;
    ElementType y = 0.0;
-   AlisingFactorType ssaa = 8;
-   DimensionType width = 19200;
-   DimensionType height = 10800;
-   IterationType iterations = 1000;
+   AlisingFactorType ssaa = 0;
+   DimensionType width = 800;
+   DimensionType height = 600;
+   IterationType iterations = 50;
    ElementType endZoom = 1.0;
    FrameType frames = 1;
 
