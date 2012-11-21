@@ -3,6 +3,9 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
+#include <climits>
+
+#include <cuda_runtime.h>
 
 #include "common.h"
 #include "fractal.h"
@@ -12,13 +15,13 @@ using namespace std;
 
 int main(int argc, char* argv[])
 {                      
-   ElementType zoomFactor = 100.0;
-   ElementType x = 0.001643721969;//-0.5;
-   ElementType y = -0.8224676332991;//0.0;
-   AlisingFactorType ssaa = 0;
+   ElementType zoomFactor = 1.0;
+   ElementType x = -0.5;
+   ElementType y = 0.0;
+   AlisingFactorType ssaa = 8;
    DimensionType width = 19200;
    DimensionType height = 10800;
-   IterationType iterations = 1200;
+   IterationType iterations = 1000;
    ElementType endZoom = 1.0;
    FrameType frames = 1;
 
@@ -88,9 +91,32 @@ int main(int argc, char* argv[])
       }
    }
 
+   cudaError_t error;
+   int iDevice;
+   cudaDeviceProp prop; 
+
+   // Get device information for total global memory
+   error = cudaGetDevice(&iDevice);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   error = cudaGetDeviceProperties(&prop, iDevice);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+
+   // The max amount to do per pass demends on the size of GPU memory and the size of unsigned integer
+   DimensionSqType maxPixelsPerPass = UINT_MAX > prop.totalGlobalMem ? prop.totalGlobalMem : UINT_MAX;
+   maxPixelsPerPass /= (4 * sizeof(ElementType)); // 4 is for RGB + alpha 
+
    if (ssaa > MAX_ALIASING_FACTOR)
    {
       cout << "Anti-alaising factor is too hight.";
+      exit(0);
+   }
+
+   if (width > maxPixelsPerPass)
+   {
+      cout << "Width is to big.";
       exit(0);
    }
    
@@ -99,7 +125,7 @@ int main(int argc, char* argv[])
    
    DimensionSqType resolution = (DimensionSqType)width * (DimensionSqType)height;
 
-   DimensionType rowsPerPass = (resolution < MAX_PIXELS_PER_PASS) ? height : MAX_PIXELS_PER_PASS / width;
+   DimensionType rowsPerPass = (resolution < maxPixelsPerPass) ? height : maxPixelsPerPass / width;
    DimensionType passes = (height / rowsPerPass) + ((height % rowsPerPass == 0) ? 0 : 1);
 
    ElementType zoomMultiplyer = 1.0;

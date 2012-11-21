@@ -2,7 +2,6 @@
 #define COMMON_H
 
 #include <cstdint>
-#include <climits>
 
 typedef uint8_t BYTE;
 typedef uint16_t WORD;
@@ -25,9 +24,6 @@ const int BLOCK_SIZE = 16;
 const int MAX_GRID_SIZE_X = 65536;
 
 const uint8_t MAX_ALIASING_FACTOR = 16;
-const uint32_t MAX_PIXELS_PER_PASS = 67108864;
-
-ElementType median(ElementType* arr, AlisingFactorSqType n);
 
 int displayCudeError(cudaError_t error);
 

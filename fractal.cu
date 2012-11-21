@@ -26,7 +26,7 @@ __device__ ElementType getMedian(ElementType* arr, AlisingFactorSqType median, A
 
         if (high == low + 1) {  /* Two elements only */
             if (arr[low] > arr[high])
-                ELEM_SWAP(arr[low], arr[high]) ;
+                swap(&arr[low], &arr[high]) ;
             return arr[median];
         }
 
@@ -165,13 +165,13 @@ __global__ void getFractalSSAA(ElementType* img, DimensionSqType* list, Dimensio
 
    if(factor2 % 2 != 0)
    {
-      img[list[curr]] = median(subpixels, factor2 / 2,  factor2);
+      img[list[curr]] = getMedian(subpixels, factor2 / 2,  factor2);
    }
    else
    {
-      img[list[curr]] rtn = (median(subpixels, factor2 / 2 - 1,  factor2)
-                           + median(subpixels, factor2 / 2,  factor2))
-                           / 2.0;
+      img[list[curr]] = (getMedian(subpixels, factor2 / 2 - 1,  factor2)
+                           + getMedian(subpixels, factor2 / 2,  factor2))
+                         / 2.0;
    }
 }
 
