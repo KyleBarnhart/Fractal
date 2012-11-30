@@ -104,9 +104,15 @@ int main(int argc, char* argv[])
    if(error != cudaSuccess)
 		displayCudeError(error);
 
-   // The max amount to do per pass demends on the size of GPU memory and the size of unsigned integer
-   DimensionSqType maxPixelsPerPass = UINT_MAX > prop.totalGlobalMem ? prop.totalGlobalMem : UINT_MAX;
-   maxPixelsPerPass /= (4 * sizeof(ElementType)); // 4 is for RGB + alpha 
+   // The max amount to do per pass demends on the size of GPU memory and the size of unsigned integer.
+   // Global memory is devided by two so that both the value array and RGB array can both fit in memory.
+   DimensionSqType maxPixelsPerPass = (UINT_MAX > (prop.totalGlobalMem / 2)) ? (prop.totalGlobalMem / 2) : UINT_MAX;
+
+   // RGB + alpha is 4 BYTEs. Make sure two copies of the larger can fit in device memory.
+   DimensionType largerType = ((4 * sizeof(BYTE)) < sizeof(ElementType)) ? sizeof(ElementType) : (4 * sizeof(BYTE));
+
+   // Divide by two for extra safty.
+   maxPixelsPerPass /= (largerType * 2);
 
    if (ssaa > MAX_ALIASING_FACTOR)
    {
@@ -125,7 +131,7 @@ int main(int argc, char* argv[])
    
    DimensionSqType resolution = (DimensionSqType)width * (DimensionSqType)height;
 
-   DimensionType rowsPerPass = (resolution < maxPixelsPerPass) ? height : maxPixelsPerPass / width;
+   DimensionType rowsPerPass = (DimensionType)((resolution < maxPixelsPerPass) ? height : maxPixelsPerPass / width);
    DimensionType passes = (height / rowsPerPass) + ((height % rowsPerPass == 0) ? 0 : 1);
 
    ElementType zoomMultiplyer = 1.0;

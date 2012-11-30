@@ -20,12 +20,20 @@ typedef uint16_t FrameType;
 #include <cuda_runtime.h>
 
 // CUDA
-const int BLOCK_SIZE = 16;
+const int BLOCK_SIZE_X = 16;
+const int BLOCK_SIZE_Y = 8;
+const int BLOCK_SIZE_SSAA = 256;
+const int BLOCK_SIZE_RGB = 16;
+
 const int MAX_GRID_SIZE_X = 65536;
 
 const uint8_t MAX_ALIASING_FACTOR = 16;
 
-int displayCudeError(cudaError_t error);
+void displayCudeError(cudaError_t error);
+void safeCudaMalloc(void** devPtr, size_t size);
+void safeCudaMemcpy(void* dist, const void* src, size_t size, cudaMemcpyKind kind);
+void safeCudaMemset(void* devPtr, int vlaue, size_t count);
+void safeCudaFree(void* devPt);
 
 void histogramToColourMap(DimensionSqType* histogram, ElementType* map, IterationType iterations, DimensionSqType resolution);
 void valueToRGB(ElementType* values, BYTE* image, IterationType iterations, DimensionType width, DimensionType height);

@@ -14,9 +14,48 @@
 
 #include "common.h"
 
+void displayCudeError(cudaError_t error) {
+	std::cerr << cudaGetErrorString(error) << std::endl;
+   std::cerr << "Press Enter to quit." << std::endl;
+	std::cin.ignore();
+	exit((int)error);
+}
+
+void safeCudaMalloc(void** devPtr, size_t size)
+{
+   cudaError_t error;
+   error = cudaMalloc(devPtr, size);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+}
+
+void safeCudaMemcpy(void* dist, const void* src, size_t size, cudaMemcpyKind kind)
+{
+   cudaError_t error;
+   error = cudaMemcpy(dist, src, size, kind);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+}
+
+void safeCudaMemset(void* devPtr, int vlaue, size_t count)
+{
+   cudaError_t error;
+   error = cudaMemset(devPtr, vlaue, count);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+}
+
+void safeCudaFree(void* devPt)
+{
+   cudaError_t error;
+   error = cudaFree(devPt);
+   if(error != cudaSuccess)
+		displayCudeError(error);
+}
+
 __device__ void getRGB(ElementType value, BYTE* rgb)
 { 
-   short colourInt = (short)(value * 1791.0f);
+   short colourInt = (short)(value * 1792.0f);
    
    BYTE bracket = colourInt / 256;
    BYTE colour = (BYTE)(colourInt % 256);
@@ -75,8 +114,8 @@ __device__ void getRGB(ElementType value, BYTE* rgb)
 
 __global__ void getBmpRGB(BYTE* image, ElementType* values, DimensionType width, DimensionType height, IterationType iterations)
 {
-   DimensionType dy = blockIdx.y * BLOCK_SIZE + threadIdx.y;  
-   DimensionType dx = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+   DimensionType dy = blockIdx.y * BLOCK_SIZE_RGB + threadIdx.y;  
+   DimensionType dx = blockIdx.x * BLOCK_SIZE_RGB + threadIdx.x;
    
    if(dx >= width || dy >= height)
       return; 
@@ -94,8 +133,8 @@ __global__ void getBmpRGB(BYTE* image, ElementType* values, DimensionType width,
 
 __global__ void getBmpRGBfromHistorgram(ElementType* map, BYTE* image, ElementType* values, DimensionType width, DimensionType height)
 {
-   DimensionType dy = blockIdx.y * BLOCK_SIZE + threadIdx.y;  
-   DimensionType dx = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+   DimensionType dy = blockIdx.y * BLOCK_SIZE_RGB + threadIdx.y;  
+   DimensionType dx = blockIdx.x * BLOCK_SIZE_RGB + threadIdx.x;
    
    if(dx >= width || dy >= height)
       return; 
@@ -113,12 +152,6 @@ __global__ void getBmpRGBfromHistorgram(ElementType* map, BYTE* image, ElementTy
    image[c*3]      = rgbValue[2];
    image[c*3 + 1]  = rgbValue[1];
    image[c*3 + 2]  = rgbValue[0];
-}
-
-int displayCudeError(cudaError_t error) {
-	std::cerr << cudaGetErrorString(error) << std::endl;
-	std::cin.ignore();
-	exit((int)error);
 }
 
 void histogramToColourMap(DimensionSqType* histogram, ElementType* map, IterationType iterations, DimensionSqType resolution)
@@ -142,43 +175,31 @@ void valueToRGB(ElementType* values, BYTE* image, IterationType iterations, Dime
 
    // Bytes
    BYTE* deviceBytes;
-   error = cudaMalloc((void**)&deviceBytes, resolution * 3);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMalloc((void**)&deviceBytes, resolution * 3);
 
    // Array of floats for the GPU
    ElementType* deviceValues;
-   error = cudaMalloc((void**)&deviceValues, resolution * (DimensionSqType)sizeof(ElementType));
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMalloc((void**)&deviceValues, resolution * (DimensionSqType)sizeof(ElementType));
 
-   error = cudaMemcpy(deviceValues, values, resolution * (DimensionSqType)sizeof(ElementType), cudaMemcpyHostToDevice);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMemcpy(deviceValues, values, resolution * (DimensionSqType)sizeof(ElementType), cudaMemcpyHostToDevice);
 
    // Run fractal on GPU
-   int gridWidth = (width / BLOCK_SIZE) + (width % BLOCK_SIZE > 0 ? 1 : 0);
-   int gridHeight =  (height / BLOCK_SIZE) + (height % BLOCK_SIZE > 0 ? 1 : 0);
+   int gridWidth = (width / BLOCK_SIZE_RGB) + (width % BLOCK_SIZE_RGB > 0 ? 1 : 0);
+   int gridHeight =  (height / BLOCK_SIZE_RGB) + (height % BLOCK_SIZE_RGB > 0 ? 1 : 0);
 
-   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
+   dim3 dimBlock(BLOCK_SIZE_RGB, BLOCK_SIZE_RGB);
    dim3 dimGrid(gridWidth, gridHeight);
 
    getBmpRGB<<<dimGrid, dimBlock>>>(deviceBytes, deviceValues, width, height, iterations);
    if ((error = cudaGetLastError()) != cudaSuccess)
 		displayCudeError(error);
 
-   error = cudaFree(deviceValues);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaFree(deviceValues);
 
    // Get fractal values from GPU
-   error = cudaMemcpy(image, deviceBytes, resolution * 3, cudaMemcpyDeviceToHost);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMemcpy(image, deviceBytes, resolution * 3, cudaMemcpyDeviceToHost);
 
-   error = cudaFree(deviceBytes);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaFree(deviceBytes);
 }
 
 void mapValueToRGB(ElementType* map, ElementType* values, BYTE* image, IterationType iterations, DimensionType width, DimensionType height)
@@ -189,55 +210,35 @@ void mapValueToRGB(ElementType* map, ElementType* values, BYTE* image, Iteration
 
    // Map
    ElementType* deviceMapValues;
-   error = cudaMalloc((void**)&deviceMapValues, (iterations + 1) * sizeof(ElementType));
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMalloc((void**)&deviceMapValues, (iterations + 1) * sizeof(ElementType));
 
-   error = cudaMemcpy(deviceMapValues, map, (iterations + 1) * sizeof(ElementType), cudaMemcpyHostToDevice);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMemcpy(deviceMapValues, map, (iterations + 1) * sizeof(ElementType), cudaMemcpyHostToDevice);
 
    // Bytes
    BYTE* deviceBytes;
-   error = cudaMalloc((void**)&deviceBytes, resolution * 3);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMalloc((void**)&deviceBytes, resolution * 3);
 
    // Array of floats for the GPU
    ElementType* deviceValues;
-   error = cudaMalloc((void**)&deviceValues, resolution * (DimensionSqType)sizeof(ElementType));
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMalloc((void**)&deviceValues, resolution * (DimensionSqType)sizeof(ElementType));
 
-   error = cudaMemcpy(deviceValues, values, resolution * (DimensionSqType)sizeof(ElementType), cudaMemcpyHostToDevice);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMemcpy(deviceValues, values, resolution * (DimensionSqType)sizeof(ElementType), cudaMemcpyHostToDevice);
 
    // Run fractal on GPU
-   int gridWidth = (width / BLOCK_SIZE) + (width % BLOCK_SIZE > 0 ? 1 : 0);
-   int gridHeight =  (height / BLOCK_SIZE) + (height % BLOCK_SIZE > 0 ? 1 : 0);
+   int gridWidth = (width / BLOCK_SIZE_RGB) + (width % BLOCK_SIZE_RGB > 0 ? 1 : 0);
+   int gridHeight =  (height / BLOCK_SIZE_RGB) + (height % BLOCK_SIZE_RGB > 0 ? 1 : 0);
 
-   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
+   dim3 dimBlock(BLOCK_SIZE_RGB, BLOCK_SIZE_RGB);
    dim3 dimGrid(gridWidth, gridHeight);
 
    getBmpRGBfromHistorgram<<<dimGrid, dimBlock>>>(deviceMapValues, deviceBytes, deviceValues, width, height);
    if ((error = cudaGetLastError()) != cudaSuccess)
 		displayCudeError(error);
 
-   error = cudaFree(deviceValues);
-   if(error != cudaSuccess)
-		displayCudeError(error);
-
-   error = cudaFree(deviceMapValues);
-   if(error != cudaSuccess)
-		displayCudeError(error);
-
    // Get fractal values from GPU
-   error = cudaMemcpy(image, deviceBytes, resolution * 3, cudaMemcpyDeviceToHost);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaMemcpy(image, deviceBytes, resolution * 3, cudaMemcpyDeviceToHost);
 
-   error = cudaFree(deviceBytes);
-   if(error != cudaSuccess)
-		displayCudeError(error);
+   safeCudaFree(deviceMapValues);
+   safeCudaFree(deviceBytes);
+   safeCudaFree(deviceValues);
 }
