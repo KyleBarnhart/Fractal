@@ -7,6 +7,8 @@
 #include "fractal.h"
 #include "common.h"
 
+__device__ __constant__ float LOG_2 = 0.69314718056;
+
 __device__ void swap(ElementType* a, ElementType* b)
 {
    ElementType t = *a;
@@ -104,7 +106,7 @@ __device__ ElementType mandelbrot(ElementType c_i, ElementType c_r, IterationTyp
    }
    else
    {
-      return (ElementType)n + 1.0 - __logf(__logf(__dsqrt_rn(z2_r + z2_i)))/__logf(2.0);;
+      return (ElementType)n + 1.0 - __logf(__logf(__dsqrt_rn(z2_r + z2_i)))/LOG_2;
    }
 }
 
